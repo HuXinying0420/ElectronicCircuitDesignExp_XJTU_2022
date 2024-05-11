@@ -1,0 +1,713 @@
+C51 COMPILER V9.52.0.0   MAIN                                                              04/27/2022 16:47:32 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Objects\main.obj
+COMPILER INVOKED BY: d:\Keil\C51\BIN\C51.EXE source\source\main.c BROWSE INCDIR(.\source\head file) DEBUG OBJECTEXTEND P
+                    -RINT(.\Listings\main.lst) TABS(2) OBJECT(.\Objects\main.obj)
+
+line level    source
+
+   1          #include "stdio.h"
+   2          #include "stdlib.h"
+   3          #include "c8051f020.h"
+   4          #include "intrins.h"
+   5          #include "lcd.h"
+   6          #include "led.h"
+   7          #include "xjtu_image.h"
+   8          #include "image2.h"
+   9          #include "gif.h"
+  10          
+  11          #define SYSCLK        11059200
+  12          #define SAMPLERATE0     50000
+  13          #define RI1  SCON1&   0x01
+  14          
+  15          #define AMX0SL_AIN    8         
+  16          #define INT_DEC       256   
+  17          #define SAMPLE_RATE_DAC 100000L        // DAC sampling rate in Hz
+  18          #define PHASE_PRECISION 65536          // range of phase accumulator
+  19          #define FREQUENCY       1000           // Frequency of output waveform in Hz
+  20          
+  21          #define TIMER_PRESCALER 12        // Based on Timer CKCON settings
+  22          #define LED_TOGGLE_RATE 100       // LED toggle rate in milliseconds    1ms
+  23                                                 // if LED_TOGGLE_RATE = 1, the LED will
+  24                                                 // be on for 1 millisecond and off for
+  25                                                 // 1 millisecond
+  26          
+  27          // There are SYSCLK/TIMER_PRESCALER timer ticks per second, so
+  28          // SYSCLK/TIMER_PRESCALER/1000 timer ticks per millisecond.
+  29          #define TIMER_TICKS_PER_MS  SYSCLK/TIMER_PRESCALER/1000
+  30          
+  31          // Note: LED_TOGGLE_RATE*TIMER_TICKS_PER_MS should not exceed 65535 (0xFFFF)
+  32          // for the 16-bit timer
+  33          
+  34          #define AUX1     TIMER_TICKS_PER_MS*LED_TOGGLE_RATE
+  35          #define AUX2     -AUX1
+  36          #define AUX3     AUX2&0x00FF
+  37          #define AUX4     ((AUX2&0xFF00)>>8)
+  38          
+  39          #define TIMER0_RELOAD_HIGH       AUX4  // Reload value for Timer0 high byte
+  40          #define TIMER0_RELOAD_LOW        AUX3  // Reload value for Timer0 low byte
+  41          
+  42          #define uchar unsigned char
+  43          #define uint unsigned int
+  44          
+  45          sfr16 TMR3     = 0x94;
+  46          sfr16 ADC0     = 0xbe;            
+  47          extern void          _nop_     (void);
+  48          sbit INT1 = P0^2;       //0的时候按键没用
+  49          
+  50          unsigned int PHASE_ADD = FREQUENCY * PHASE_PRECISION / SAMPLE_RATE_DAC;
+  51          long ADC0_result[2];    //AD转换缓冲
+  52          int xdata v[10];
+  53          int xdata u[10];
+  54          unsigned char count=0,tcount=0;   //按键计时
+C51 COMPILER V9.52.0.0   MAIN                                                              04/27/2022 16:47:32 PAGE 2   
+
+  55          int w1,x1,y1,z1;      //led第一行显示数字
+  56          int w2,x2,y2,z2;      //led第二行显示数字
+  57          int w3,x3,y3,z3;      //led第三行显示数字
+  58          int setting=2200;     //设定控制电压值！！！！！！！！！！！！！！！！！
+  59          int result;         //画波形图时的中转值（16进制）
+  60          long xdata result2;     //画波形图时的中转值（10进制）
+  61          
+  62          xdata float kp=1;     //PID参数
+  63          xdata float ki=0.02;
+  64          xdata float kd=0.004;
+  65          
+  66          int error,derror;//误差中间量
+  67          int preerror=0;
+  68          int lasterror=0;
+  69          long sumerror=0;//误差积分
+  70          int output;//输出
+  71          unsigned int channel = 1;
+  72          int SIN_temp,Square_temp,Triangle_temp; 
+  73          unsigned char idata key_delay;
+  74          unsigned int idata lcd_delay;
+  75          volatile int xdata wavevalue[128]={0};
+  76          unsigned char idata wavepos=0;
+  77          unsigned int idata filtertype=0;
+  78          unsigned int idata filtertype2=0;
+  79          unsigned int idata paratype=0;
+  80          int idata init=10;
+  81          volatile unsigned char idata samplepos=0;
+  82          volatile long idata slidesum=0;
+  83          unsigned int ledcount=0;//延时显示波形用
+  84          unsigned char idata ckp[6]="1.000";
+  85          unsigned char idata cki[6]="0.020";
+  86          unsigned char idata ckd[6]="0.004";
+  87          
+  88          unsigned int Time_num;    //全局计时用
+  89          unsigned int Time_num2;   //全局计时用
+  90          unsigned int Time_num3;   //全局计时用
+  91          unsigned int botflag=4;   //按键标志 0，1，2分别表示左、中、右，按完返回4
+  92          unsigned int TRflag=0;    //TR值的标志，用于计时器启停
+  93          unsigned int mainflag=0;  //页面标志
+  94          unsigned int showflag1=0; //实验一显示标志
+  95          unsigned int showflag2=0; //实验二显示标志
+  96          unsigned int imgflag=0;   //实验一图片标志
+  97          unsigned int GFlag=0;   //实验一gif变量
+  98          
+  99          //-----------------------------------------------------------------------------
+ 100          // 16-bit SFR Definitions for 'F02x
+ 101          //-----------------------------------------------------------------------------
+ 102          
+ 103          sfr16 RCAP4    = 0xE4;                 // Timer4 capture/reload
+ 104          sfr16 TMR4     = 0xF4;                 // Timer4
+ 105          sfr16 DAC0     = 0xd2;                 // DAC0 data
+ 106          
+ 107          void ADC0_Init (void)//ADC0初始化
+ 108          {
+ 109   1          ADC0CN = 0xC4;       // 关闭ADC0; 低能追踪模式
+ 110   1          REF0CN = 0x03;        // 打开温度传感器, on-chip VREF
+ 111   1          AMX0SL=0x01;     // ADC0使用"0"通道
+ 112   1          ADC0CF=31<<3;         // ADC转换时钟= 2.5MHz
+ 113   1          ADC0CF&=0xf8;          // PGA gain = 1
+ 114   1          EIE2|=0x02;        // 打开ADC0中断
+ 115   1      }
+ 116          
+C51 COMPILER V9.52.0.0   MAIN                                                              04/27/2022 16:47:32 PAGE 3   
+
+ 117          unsigned int ADC_Value (unsigned char Flag)//计算ADC数值
+ 118          {
+ 119   1          unsigned int data temp,temp0,temp1;
+ 120   1          if(Flag)                    //ADC1
+ 121   1              temp0=ADC1;                            
+ 122   1          else                        //ADC0                    
+ 123   1          {
+ 124   2              temp0=ADC0L;
+ 125   2              temp1=ADC0H;
+ 126   2          }
+ 127   1          temp=temp1*256+temp0;        
+ 128   1          return temp;                //取回ADC转换数据
+ 129   1      }
+ 130          void DAC0_Init(void)//DAC0初始化
+ 131          {
+ 132   1        REF0CN = 0x03;                   // 使用内部VREF发生器
+ 133   1        DAC0CN = 0x98;                   //定时器2、000模式
+ 134   1        DAC0L=0x00;
+ 135   1        DAC0H=0x00;                   // 打开DAC0，右对齐模式
+ 136   1      }
+ 137          void SYSCLK_Init (void)//系统时钟初始化
+ 138          {
+ 139   1         int i;                      // 延时计数器
+ 140   1         OSCXCN = 0x67;              // 使用外部22.1184MHz晶振
+ 141   1         for (i=0; i<256; i++);      // 等待1ms
+ 142   1         while (!(OSCXCN & 0x80));   // 等待外部振荡器稳定
+ 143   1         OSCICN = 0x88;              // 切换到外部晶振
+ 144   1        
+ 145   1      }
+ 146          void PORT_Init (void)//端口初始化
+ 147          {
+ 148   1          XBR0     = 0X00;         //设置XBR0
+ 149   1          XBR1     = 0X14;         //设置XBR1
+ 150   1          XBR2     = 0X44;         //打开交叉开关和弱上拉
+ 151   1          P74OUT  &= 0xcc;
+ 152   1          P2MDOUT |= 0x7F;
+ 153   1          P0MDOUT|= 0x03;
+ 154   1          P1MDOUT=0xFF;      //端口1设置为推挽输出
+ 155   1          P2MDOUT=0xFF;      //端口2设置为推挽输出
+ 156   1          P3MDOUT=0xFF;      //端口3设置为推挽输出
+ 157   1      }
+ 158          void Port_IO_Init()//IO口初始化
+ 159          {
+ 160   1        //set P4[1] to push_pull model
+ 161   1          P74OUT |= 0x01;
+ 162   1        
+ 163   1        //enable crossbar
+ 164   1          XBR2 |= 0x40;
+ 165   1      
+ 166   1          //close the alam P4.1
+ 167   1          P4 &= 0xfd;
+ 168   1        
+ 169   1        //uart1,int1
+ 170   1        XBR1 |= 0x10;
+ 171   1        XBR2 |= 0x44;
+ 172   1      }
+ 173          
+ 174          void Oscillator_Init()//晶振初始化
+ 175          {
+ 176   1          int i = 0;
+ 177   1          OSCXCN    = 0x67;
+ 178   1          for (i = 0; i < 3000; i++);  // Wait 1ms for initialization
+C51 COMPILER V9.52.0.0   MAIN                                                              04/27/2022 16:47:32 PAGE 4   
+
+ 179   1          while ((OSCXCN & 0x80) == 0);
+ 180   1          OSCICN    = 0x08;
+ 181   1      }
+ 182          
+ 183          void Timer0_Init(void)//定时器0初始化
+ 184          {
+ 185   1        TH0 = TIMER0_RELOAD_HIGH;           // Reinit Timer0 High register
+ 186   1        TL0 = TIMER0_RELOAD_LOW;
+ 187   1        ET0 = 1;                            // Timer0 interrupt enabled
+ 188   1        TMOD = 0x01;                        // 16-bit Mode Timer0
+ 189   1        //TCON |= 0x10;                        // Timer0 ON
+ 190   1      }
+ 191          void Timer1_Init(void)//定时器1初始化
+ 192          {
+ 193   1          CKCON&=0x68;
+ 194   1          TMOD=0x10;
+ 195   1          TH1=0xFc;
+ 196   1          TL1=0x18;
+ 197   1          ET1=1;
+ 198   1          TR1=1;   
+ 199   1      }
+ 200          void Timer3_Init (int counts)//定时器3初始化
+ 201          {
+ 202   1         TMR3CN = 0x02;                      // 停止Timer3; 清除TF3;   
+ 203   1         TMR3RLL=-counts;                   // 初始化装载值
+ 204   1         TMR3=0xffff;                   // 设置立即装载
+ 205   1         EIE2&=0xFE;                      // 禁止定时器Timer3中断
+ 206   1         TMR3CN|= 0x04;                     // 开启Timer3
+ 207   1      }
+ 208          void Timer2_Init (void)//定时器2初始化 为DA0转换提供
+ 209          {
+ 210   1          RCAP2H=0x05;
+ 211   1          RCAP2L=0x00;
+ 212   1          TH2=0x05;
+ 213   1          TL2=0x00;
+ 214   1          T2CON=0x04;
+ 215   1          IE|= 0x20;
+ 216   1      }
+ 217          void TIMER4_Init (int counts)//定时器4初始化
+ 218          {   
+ 219   1         T4CON = 0x00;                       // Stop Timer4; Clear overflow flag (TF4);
+ 220   1                                             // Set to Auto-Reload Mode
+ 221   1      
+ 222   1         
+ 223   1         CKCON |= 0x40;                      // Timer4 counts SYSCLKs
+ 224   1      
+ 225   1         RCAP4 = -counts;                    // Set reload value
+ 226   1         TMR4 = RCAP4;                       // Initialzie Timer4 to reload value
+ 227   1      
+ 228   1         EIE2 |= 0x04;                       // Enable Timer4 interrupts
+ 229   1         T4CON |= 0x04;                      // Start Timer4
+ 230   1      
+ 231   1      }
+ 232          void Interrupt_Init()//中断初始化
+ 233          {
+ 234   1        //INT1
+ 235   1        //low level triggle
+ 236   1        IT1 = 0;
+ 237   1        //enable INT1
+ 238   1        EX1 = 1;
+ 239   1        //enable all interrupt
+ 240   1        EA = 1;
+C51 COMPILER V9.52.0.0   MAIN                                                              04/27/2022 16:47:32 PAGE 5   
+
+ 241   1      }
+ 242          
+ 243          void Init_Device(void)//各种初始化函数
+ 244          {
+ 245   1        //关闭看门狗
+ 246   1        EA = 0;
+ 247   1        WDTCN = 0xde;
+ 248   1        WDTCN = 0xad;
+ 249   1        EA = 1;
+ 250   1        
+ 251   1        Oscillator_Init();
+ 252   1        Port_IO_Init();
+ 253   1        Timer0_Init();
+ 254   1        Interrupt_Init();
+ 255   1        SYSCLK_Init ();//
+ 256   1        PORT_Init();//
+ 257   1        Timer3_Init(SYSCLK/SAMPLERATE0);//
+ 258   1        //TIMER4_Init(SYSCLK/SAMPLE_RATE_DAC);
+ 259   1        ADC0_Init ();//
+ 260   1        Timer2_Init ();//
+ 261   1        DAC0_Init();//
+ 262   1        INT1 = 1;
+ 263   1        TR0=1;
+ 264   1        EX1=1;
+ 265   1        AD0EN=1;
+ 266   1        EA=1;
+ 267   1        
+ 268   1        LcdInit();
+ 269   1        LedInit();
+ 270   1      }
+ 271          void Set_DACs_forsine(void)//生成正弦函数对DAC0值的更改
+ 272          {
+ 273   1         static unsigned phase_acc = 0;      // Holds phase accumulator
+ 274   1            
+ 275   1                    // Temporary 16-bit variables 
+ 276   1         unsigned char index;                // Index into SINE table
+ 277   1      
+ 278   1         phase_acc += PHASE_ADD;             // Increment phase accumulator
+ 279   1         index = phase_acc >> 8;
+ 280   1      
+ 281   1         SIN_temp = SINE_TABLE[index];
+ 282   1      // Read the table value
+ 283   1         Square_temp = Square_TABLE[index];
+ 284   1         Triangle_temp = Triangle_TABLE[index];
+ 285   1         index += 64;//！！！这个DA例程里面有，但是综合设计例程里没有，先加上到时候连示波器看看作用
+ 286   1            switch(filtertype)
+ 287   1         {
+ 288   2            case 0:
+ 289   2              DAC0 = (SIN_temp ^ 0x8000)*0.92;
+ 290   2            break;
+ 291   2          case 1:      // Read the table value
+ 292   2              DAC0 = (Triangle_temp ^ 0x8000)*0.92;
+ 293   2            break;
+ 294   2          case 2:
+ 295   2              // Read the table value
+ 296   2              DAC0 =(Square_temp ^ 0x8000)*0.92;
+ 297   2            break;
+ 298   2          default:
+ 299   2              DAC0 =( SIN_temp ^ 0x8000)*0.92;
+ 300   2         };
+ 301   1      }
+ 302          
+C51 COMPILER V9.52.0.0   MAIN                                                              04/27/2022 16:47:32 PAGE 6   
+
+ 303          
+ 304          void page2show(void)
+ 305          {
+ 306   1        if (showflag1==0)//实验一子菜单
+ 307   1        {
+ 308   2          WriteStr(0, 0, "  实验一   ");
+ 309   2            WriteStr(1, 0, "左：历程");
+ 310   2            WriteStr(2, 0, "中：动画   ");
+ 311   2          WriteStr(3, 0, "右：返回");
+ 312   2          LedDispNum();
+ 313   2          if(botflag==0) 
+ 314   2          {showflag1=4;LcdClear();botflag=4;}
+ 315   2          if(botflag==1) 
+ 316   2              {
+ 317   3                showflag1=3;LcdClear();botflag=4;
+ 318   3                WriteStr(0, 0, "");
+ 319   3            WriteStr(1, 0, "左: 开始");
+ 320   3            WriteStr(2, 0, "右: 返回");
+ 321   3            WriteStr(3, 0, "");
+ 322   3              }
+ 323   2          if(botflag==2) 
+ 324   2          {
+ 325   3            mainflag=0;
+ 326   3            LcdClear();
+ 327   3            botflag=4;
+ 328   3          }
+ 329   2        }
+ 330   1        if (showflag1==1)//计时子菜单
+ 331   1        {
+ 332   2          WriteStr(0, 0, "左：置零");
+ 333   2            WriteStr(1, 0, "中：开始  暂停");
+ 334   2            WriteStr(2, 0, "右：返回");
+ 335   2            WriteStr(3, 0, "学号:2171411574");
+ 336   2            if (botflag==0) {Time_num = 0;botflag=4;}//计时清零 
+ 337   2            if (botflag==1)
+ 338   2            {
+ 339   3                TRflag=TR0;
+ 340   3                if (TRflag==0)
+ 341   3                  TR0=1;
+ 342   3                else if(TRflag==1)
+ 343   3                  TR0=0;
+ 344   3                botflag=4;
+ 345   3            }//开始、停止读秒
+ 346   2            if (botflag==2) 
+ 347   2            {showflag1=0;LcdClear();botflag=4;}//退出界面
+ 348   2              LedDispNum();   //显示三行数据
+ 349   2          }
+ 350   1        if (showflag1==2)//选图子菜单
+ 351   1        {
+ 352   2          LedDispNum();
+ 353   2          WriteStr(0, 0, "左: 上一幅");
+ 354   2            WriteStr(1, 0, "中: 下一幅  ");
+ 355   2            WriteStr(2, 0, "右: 退出  ");
+ 356   2          if (botflag==0) 
+ 357   2              {
+ 358   3                botflag=4;
+ 359   3            LcdInit();
+ 360   3            imgflag--; 
+ 361   3            if(imgflag>5) imgflag=4;
+ 362   3            imgflag=imgflag%5;
+ 363   3            //chooselabel();
+ 364   3              }//上一张图片
+C51 COMPILER V9.52.0.0   MAIN                                                              04/27/2022 16:47:32 PAGE 7   
+
+ 365   2          if (botflag==1) 
+ 366   2          {
+ 367   3                botflag=4;LcdInit();imgflag=(imgflag+1)%5;
+ 368   3                chooselabel();
+*** WARNING C206 IN LINE 368 OF source\source\main.c: 'chooselabel': missing function-prototype
+ 369   3              }//下一张图片
+ 370   2          if (botflag==2) 
+ 371   2          {showflag1=0;botflag=4;LcdInit();}//退出界面
+ 372   2        }
+ 373   1        if (showflag1==3)//动画子菜单
+ 374   1        {
+ 375   2            LedDispNum();
+ 376   2            if (botflag==0)
+ 377   2            {
+ 378   3                LcdInit();
+ 379   3              while (GFlag<6)
+ 380   3              {
+ 381   4              ImageShow2(GF[GFlag]);
+ 382   4              GFlag++;
+ 383   4              Delay_ms(160);
+ 384   4              }
+ 385   3              GFlag=0;botflag=4;LcdInit();
+ 386   3              WriteStr(1, 0, "结束，请按右键");
+ 387   3            }
+ 388   2            if (botflag==1) {TR0=1;LcdInit();botflag=4;}
+ 389   2            if (Time_num==500) {TR0=0;botflag=0;Time_num=0;}
+ 390   2            if (botflag==2) {showflag1=0;botflag=4;LcdInit();}//退出界面
+ 391   2        }
+ 392   1        if (showflag1==4)//计时选图中转菜单
+ 393   1        {
+ 394   2            LedDispNum();
+ 395   2            WriteStr(0, 0, "");
+ 396   2            WriteStr(1, 0, "左：计数");
+ 397   2              WriteStr(2, 0, "中：图片");
+ 398   2              WriteStr(3, 0, "右：返回");
+ 399   2            if (botflag==0) {showflag1=1;LcdClear();botflag=4;}
+ 400   2            if (botflag==1)
+ 401   2            {
+ 402   3                showflag1=2;LcdClear();botflag=4;
+ 403   3                ImageShow(xjtu_image[imgflag]);
+ 404   3                WriteStr(3, 0, "White");
+ 405   3            }
+ 406   2            if (botflag==2) {showflag1=0;botflag=4;LcdInit();}//退出界面
+ 407   2        }
+ 408   1      }
+ 409          
+ 410          void page3show(void)
+ 411          {
+ 412   1        int i;
+ 413   1        if (showflag2==0)//实验二子菜单
+ 414   1        {
+ 415   2          WriteStr(0, 0, "实验二");
+ 416   2          WriteStr(1, 0, "左：示波器");
+ 417   2          WriteStr(2, 0, "中：飞机控制");
+ 418   2          WriteStr(3, 0, "右：返回");
+ 419   2          LedDispNum();
+ 420   2          if (botflag==2) {mainflag=0;LcdClear();botflag=4;}
+ 421   2          if (botflag==1) {showflag2=2;LcdInit();botflag=4;}
+ 422   2          if (botflag==0) {showflag2=1;LcdInit();botflag=4;WriteStr(1, 0, "按左键开始");}
+ 423   2        }
+ 424   1        if (showflag2==1)//显示波形菜单
+ 425   1        {
+C51 COMPILER V9.52.0.0   MAIN                                                              04/27/2022 16:47:32 PAGE 8   
+
+ 426   2          LedDispNum();
+ 427   2          WriteStr(2, 0, "左: 上  中: 下");
+ 428   2          WriteStr(3, 0, "右: 停止&&返回");
+ 429   2          
+ 430   2          v[samplepos++]=(int)(ADC0_result[1]-270)*1.101;
+ 431   2          samplepos%=10;
+ 432   2          if(init>0)
+ 433   2          {
+ 434   3            init--;
+ 435   3          }
+ 436   2          else if(init==0)//为滑动均值计算参数
+ 437   2          {
+ 438   3            for(i=1;i<10;i++)
+ 439   3              {slidesum+=v[i];}
+ 440   3            init=-1;
+ 441   3          }
+ 442   2          ledcount=30; //越大，显示波形速度越慢
+ 443   2          switch(filtertype2)
+ 444   2          {
+ 445   3            case 0:
+ 446   3              Average_filter();//算法平均值滤波
+ 447   3              break;
+ 448   3            case 1:
+ 449   3              Median_average_filter();//中位值平均滤波
+ 450   3              break;
+ 451   3            case 2:
+ 452   3              Sliding_filter();//滑动均值滤波
+ 453   3              break;
+ 454   3          }
+ 455   2          wavevalue[wavepos]=(result-1930)*5.12;//全屏显示
+ 456   2          LcdInit();
+ 457   2          if(wavepos==0) {ImageShow(gImage_white);}
+ 458   2          LcdShowPoint(wavepos++);
+ 459   2          wavepos%=128;
+ 460   2          w2 =  setting/1000;//显示设定值
+ 461   2            x2 = (setting - w2*1000)/100;
+ 462   2            y2 = (setting - w2*1000-x2*100)/10;
+ 463   2            z2 =  setting - w2*1000-x2*100-y2*10;
+ 464   2          w3 =  output/1000;//显示控制量
+ 465   2            x3 = (output - w2*1000)/100;
+ 466   2            y3 = (output - w2*1000-x2*100)/10;
+ 467   2            z3 =  output - w2*1000-x2*100-y2*10;
+ 468   2          while(ledcount)
+ 469   2          {
+ 470   3            show_f_row();
+ 471   3            show_s_row();
+ 472   3            show_t_row();
+*** WARNING C206 IN LINE 472 OF source\source\main.c: 'show_t_row': missing function-prototype
+ 473   3            ledcount--;
+ 474   3          }
+ 475   2          //控制算法
+ 476   2          error=setting-result2;
+ 477   2          sumerror+=error;
+ 478   2          derror=lasterror-preerror;
+ 479   2          preerror=lasterror;
+ 480   2          lasterror=error;
+ 481   2          output=result2+kp*error+ki*sumerror+kd*derror;
+ 482   2          
+ 483   2          if (botflag==0) {setting=setting+50;botflag=4;}
+ 484   2          if (botflag==1) {setting=setting-50;botflag=4;}
+ 485   2          if (botflag==2) {showflag2=0;LcdInit();botflag=4;}    
+ 486   2        }
+C51 COMPILER V9.52.0.0   MAIN                                                              04/27/2022 16:47:32 PAGE 9   
+
+ 487   1        
+ 488   1        if (showflag2==2)//控制平衡器选择滤波方式
+ 489   1        {
+ 490   2          WriteStr(0, 0, "滤波器");
+ 491   2          WriteStr(2, 0, "左:next 中: 控制");
+ 492   2          WriteStr(3, 0, "右：返回");
+ 493   2          LedDispNum();
+ 494   2          switch(filtertype2)
+ 495   2          {
+ 496   3            case 0:
+ 497   3              WriteStr(1, 0, "算法平均值滤波  ");
+ 498   3              break;
+ 499   3            case 1:
+ 500   3              WriteStr(1, 0, "中位值平均滤波  ");
+ 501   3              break;
+ 502   3            case 2:
+ 503   3              WriteStr(1, 0, "滑动平均值滤波  ");
+ 504   3              break;
+ 505   3          }
+ 506   2          if (botflag==0) {filtertype2=(filtertype2+1)%3;botflag=4;}
+ 507   2          if (botflag==1) {showflag2=3;LcdInit();ImageShow(gImage_white);botflag=4;}
+ 508   2          if (botflag==2) {showflag2=0;LcdInit();botflag=4;}
+ 509   2        }
+ 510   1        if (showflag2==3)//控制改变PID参数
+ 511   1        {
+ 512   2      
+ 513   2          WriteStr(0, 0, "Kp:     ");
+ 514   2          WriteStr(1, 0, "Ki:     ");
+ 515   2          WriteStr(2, 0, "Kd:     ");
+ 516   2          WriteStr(3, 0, "左:Next 中：确定");   
+ 517   2          WriteStr(0, 4, ckp);
+ 518   2          WriteStr(1, 4, cki);
+ 519   2          WriteStr(2, 4, ckd);  
+ 520   2          LedDispNum();
+ 521   2          if (botflag==0) {paratype=(paratype+1)%3;botflag=4;}
+ 522   2          if (botflag==1) {showflag2=paratype+30;LcdInit();botflag=4;} 
+ 523   2          if (botflag==2) {showflag2=0;LcdInit();botflag=4;}
+ 524   2      
+ 525   2        }
+ 526   1        if (showflag2==30)//控制改变PID参数
+ 527   1        {
+ 528   2      
+ 529   2      
+ 530   2          WriteStr(0, 0, "Kp:     ");
+ 531   2          WriteStr(1, 0, "左：加         ");
+ 532   2          WriteStr(2, 0, "中：减         ");
+ 533   2          WriteStr(3, 0, "右：返回       ");    
+ 534   2          WriteStr(0, 4, ckp);
+ 535   2          LedDispNum();
+ 536   2          if (botflag==0) {kp=kp+0.1;ckp[0]=ckp[0]+1;WriteStr(0, 4, ckp);botflag=4;}
+ 537   2          if (botflag==1) {kp=kp-0.1;ckp[0]=ckp[0]-1;WriteStr(0, 4, ckp);botflag=4;} 
+ 538   2          if (botflag==2) {showflag2=3;LcdInit();botflag=4;}
+ 539   2        }
+ 540   1        
+ 541   1        if (showflag2==31)//控制改变PID参数
+ 542   1        {
+ 543   2      
+ 544   2      
+ 545   2          WriteStr(0, 0, "Ki:     ");
+ 546   2          WriteStr(1, 0, "左：加         ");
+ 547   2          WriteStr(2, 0, "中：减         ");
+ 548   2          WriteStr(3, 0, "右：返回       ");    
+C51 COMPILER V9.52.0.0   MAIN                                                              04/27/2022 16:47:32 PAGE 10  
+
+ 549   2          WriteStr(0, 4, cki);
+ 550   2          LedDispNum();
+ 551   2          if (botflag==0) {ki=ki+0.01;cki[3]=cki[3]+1;WriteStr(0, 4, cki);botflag=4;}
+ 552   2          if (botflag==1) {ki=ki-0.01;cki[3]=cki[3]-1;WriteStr(0, 4, cki);botflag=4;} 
+ 553   2          if (botflag==2) {showflag2=3;LcdInit();botflag=4;}
+ 554   2        }
+ 555   1        if (showflag2==32)//控制改变PID参数
+ 556   1        {
+ 557   2      
+ 558   2      
+ 559   2          WriteStr(0, 0, "Kd:     ");
+ 560   2          WriteStr(1, 0, "左：加     ");
+ 561   2          WriteStr(2, 0, "中：减     ");
+ 562   2          WriteStr(3, 0, "右：返回   ");    
+ 563   2          WriteStr(0, 4, ckd);
+ 564   2          LedDispNum();
+ 565   2          if (botflag==0) {kd=kd+0.001;ckd[4]=ckd[4]+1;WriteStr(0, 4, ckd);botflag=4;}
+ 566   2          if (botflag==1) {kd=kd-0.001;ckd[4]=ckd[4]-1;WriteStr(0, 4, ckd);botflag=4;} 
+ 567   2          if (botflag==2) {showflag2=3;LcdInit();botflag=4;}
+ 568   2        }
+ 569   1      }
+ 570          //-----------------------------------------------------------------------------
+ 571          // 主程序
+ 572          //-----------------------------------------------------------------------------
+ 573          
+ 574          void main()
+ 575          { 
+ 576   1        Init_Device();//各种初始化
+ 577   1        INT1 = 1;//开启中断
+ 578   1        TR0=0;//计时器停止
+ 579   1          while(1)
+ 580   1          {
+ 581   2            if(mainflag==0)//主界面
+ 582   2            {
+ 583   3              WriteStr(0, 0, "电子线路设计实验");
+ 584   3              WriteStr(1, 0, "自动化94  胡欣盈");
+ 585   3              WriteStr(2, 0, "2194323176     ");
+ 586   3              WriteStr(3, 0, "按任意键开始实验");
+ 587   3              LedDispNum();
+ 588   3              if (botflag==0) {mainflag=3;LcdClear();botflag=4;}
+ 589   3              if (botflag==1) {mainflag=3;LcdClear();botflag=4;}
+ 590   3              if (botflag==2) {mainflag=3;LcdClear();botflag=4;}
+ 591   3            }
+ 592   2            if(mainflag==1){page3show();}
+ 593   2            if(mainflag==2){page2show();}
+ 594   2            if(mainflag==3){page3show();}//进入实验二界面
+ 595   2          }
+ 596   1      }
+ 597          
+ 598          void INT1_ISR(void) interrupt 2
+ 599          {
+ 600   1        Delay_ms(1);
+ 601   1        switch(P5)
+ 602   1        {
+ 603   2          case 0xfb:   //左边那个键
+ 604   2            botflag=0;
+ 605   2              Delay_ms(50);
+ 606   2            break;
+ 607   2          
+ 608   2          case 0xfd:    //中间那个键
+ 609   2            botflag=1;
+ 610   2              Delay_ms(50);
+C51 COMPILER V9.52.0.0   MAIN                                                              04/27/2022 16:47:32 PAGE 11  
+
+ 611   2            break;    
+ 612   2          
+ 613   2          case 0xfe:   //右边那个键
+ 614   2            botflag=2;
+ 615   2              Delay_ms(50);
+ 616   2            break;
+ 617   2        }
+ 618   1        
+ 619   1      }
+ 620          
+ 621          void Timer0_ISR (void) interrupt 1
+ 622          {
+ 623   1        TH0 = TIMER0_RELOAD_HIGH;           // Reinit Timer0 High register
+ 624   1        TL0 = TIMER0_RELOAD_LOW;
+ 625   1        
+ 626   1        Time_num++;
+ 627   1        
+ 628   1        if(Time_num >= 6000) Time_num = 0;
+ 629   1        if(key_delay>0)
+ 630   1          key_delay++;
+ 631   1        if(key_delay==20) key_delay=0;
+ 632   1        
+ 633   1        if(lcd_delay>0)
+ 634   1          lcd_delay++;
+ 635   1        if(lcd_delay>100) lcd_delay=0;
+ 636   1      }
+ 637          void Timer1_ISR(void) interrupt 3//定时器1中断
+ 638          {
+ 639   1          TH1|=0xfc;
+ 640   1          TL1|=0x18;
+ 641   1          tcount++;
+ 642   1          if(tcount>=20)
+ 643   1          {
+ 644   2            tcount=0;
+ 645   2      //      Timeout=1;
+ 646   2          }
+ 647   1          count++;    
+ 648   1      }
+ 649          void Time2_ISR(void) interrupt 5 // 定时器2中断服务
+ 650          {
+ 651   1        TF2=0;
+ 652   1        //Set_DACs_forsine();//生成函数点
+ 653   1          DAC0=output;
+ 654   1      }
+ 655          
+ 656          void ADC0_ISR (void) interrupt 15 //ADC0中断服务
+ 657          {
+ 658   1          // ADC mux ?? (0-1)
+ 659   1         AD0INT=0;                  // ??ADC??????
+ 660   1         ADC0_result[channel]=ADC_Value(0);      // ?ADC?
+ 661   1         channel++;                           // ????
+ 662   1         if (channel>=2)
+ 663   1         channel = 0;
+ 664   1         //AMX0SL = channel;              // ??mux?????
+ 665   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   3844    ----
+   CONSTANT SIZE    =  18436    ----
+   XDATA SIZE       =    312    ----
+   PDATA SIZE       =   ----    ----
+C51 COMPILER V9.52.0.0   MAIN                                                              04/27/2022 16:47:32 PAGE 12  
+
+   DATA SIZE        =     86       2
+   IDATA SIZE       =     35    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  2 WARNING(S),  0 ERROR(S)
