@@ -1,0 +1,368 @@
+C51 COMPILER V9.52.0.0   LCDKEYPHOTO                                                       04/13/2022 20:08:26 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE LCDKEYPHOTO
+OBJECT MODULE PLACED IN lcdkeyphoto.OBJ
+COMPILER INVOKED BY: d:\Keil\C51\BIN\C51.EXE lcdkeyphoto.c BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          
+   2          #include "lcd.h"
+   3          #include "stdlib.h"
+   4          #include <intrins.h>
+   5          #define uchar unsigned char          
+   6          #define uint  unsigned int 
+   7          
+   8          //constant definition
+   9          const unsigned char code flower[1024] =   { /* 0X00,0X01,0X10,0X00,0X10,0X00, */
+  10          0X00,0X00,0X00,0X00,0X00,0X80,0X02,0X40,0X02,0X00,0X18,0X18,0X20,0X04,0X00,0X04,
+  11          0X10,0X00,0X00,0X10,0X00,0X00,0X08,0X08,0X00,0X00,0X0A,0X70,0X00,0X00,0X00,0X00,
+  12          };
+  13          const unsigned char code ren[1024]=  { /* 0X00,0X01,0X10,0X00,0X10,0X00, */
+  14          0X00,0X00,0X06,0X00,0X06,0X00,0X32,0X00,0X18,0X60,0X07,0XC0,0X03,0X00,0X03,0X80,
+  15          0X01,0X80,0X00,0XC0,0X00,0XF0,0X00,0XA0,0X00,0X80,0X01,0X80,0X01,0X80,0X00,0X00,
+  16          };
+  17          
+  18          uchar *imagePtr=flower;
+  19          uchar *imagePtr1=ren;
+  20          sbit SCLK=P1^3;
+  21          sbit SID=P1^4;
+  22          sbit CS=P1^5;
+  23          uchar code AC_TABLE[]={
+  24          0x80,0x81,0x82,0x83,0x84,0x85,0x86,0x87,      //第一行汉字位置
+  25          0x90,0x91,0x92,0x93,0x94,0x95,0x96,0x97,      //第二行汉字位置
+  26          0x88,0x89,0x8a,0x8b,0x8c,0x8d,0x8e,0x8f,      //第三行汉字位置
+  27          0x98,0x99,0x9a,0x9b,0x9c,0x9d,0x9e,0x9f,      //第四行汉字位置
+  28          };
+  29          
+  30          
+  31          extern char yidong;
+  32          yidong=0;
+*** WARNING C231 IN LINE 32 OF lcdkeyphoto.c: 'yidong': redefinition
+  33          extern char lie;
+  34          lie=0;
+*** WARNING C231 IN LINE 34 OF lcdkeyphoto.c: 'lie': redefinition
+  35          
+  36          
+  37          
+  38          
+  39          void Lcd_Port_Init(void)
+  40          {
+  41   1              //set P1[5:3] to push_pull model
+  42   1          P1MDOUT |= 0x38;
+  43   1              
+  44   1              //enable crossbar
+  45   1          XBR2 |= 0x40;
+  46   1      }
+  47          
+  48          
+  49          void LcdInit( void )
+  50          {
+  51   1          Lcd_Port_Init();
+  52   1      
+  53   1          WriteCommand(0x30);      //8BitMCU
+C51 COMPILER V9.52.0.0   LCDKEYPHOTO                                                       04/13/2022 20:08:26 PAGE 2   
+
+  54   1          WriteCommand(0x03);      //AC?0,不改变DDRAM值
+  55   1          WriteCommand(0x0C);      //显示ON,游标OFF,游标位反白OFF
+  56   1          WriteCommand(0x01);      //清屏,AC归0
+  57   1          WriteCommand(0x06);      //写入时,游标右移动
+  58   1      
+  59   1          LcdClear();
+  60   1      }
+  61          
+  62          
+  63          void Delay_ms(uint times)
+  64          {
+  65   1          uint i,j;
+  66   1          for (i=0; i<times; i++)
+  67   1              for (j=0; j<1300; j++);
+  68   1      }
+  69          
+  70          void Delay(uint k)
+  71          {
+  72   1          do
+  73   1          {
+  74   2          }
+  75   1          while( --k );
+  76   1      }
+  77          
+  78          
+  79          void SendByte(uchar Dbyte)
+  80          {
+  81   1          uchar i;
+  82   1          for(i=0; i<8; i++)
+  83   1          {
+  84   2              SCLK = 0;
+  85   2              Dbyte=Dbyte<<1;      //左移一位
+  86   2              SID = CY;            //移出的位给SID
+  87   2              SCLK = 1;
+  88   2              SCLK = 0;
+  89   2          }
+  90   1      }
+  91          
+  92          uchar ReceiveByte(void)
+  93          {
+  94   1          uchar i, temp1, temp2, temp3;
+  95   1          temp1 = 0;
+  96   1          temp2 = 0;
+  97   1          for(i=0; i<8; i++)
+  98   1          {
+  99   2              temp1=temp1<<1;
+ 100   2              SCLK = 0;
+ 101   2              SCLK = 1;
+ 102   2              SCLK = 0;
+ 103   2              if(SID) temp1++;
+ 104   2          }
+ 105   1          for(i=0; i<8; i++)
+ 106   1          {
+ 107   2              temp2=temp2<<1;
+ 108   2              SCLK = 0;
+ 109   2              SCLK = 1;
+ 110   2              SCLK = 0;
+ 111   2              if(SID) temp2++;
+ 112   2          }
+ 113   1              temp3 = (0xf0&temp1)+(0x0f&temp2);
+ 114   1          return (temp3);
+ 115   1      }
+C51 COMPILER V9.52.0.0   LCDKEYPHOTO                                                       04/13/2022 20:08:26 PAGE 3   
+
+ 116          
+ 117          void CheckBusy( void )
+ 118          {
+ 119   1          do   SendByte(0xfc);      //11111,RW(1),RS(0),0
+ 120   1          while(0x80&ReceiveByte());      //BF(.7)=1 Busy
+ 121   1      }
+ 122          
+ 123          void WriteCommand(unsigned char Cbyte )
+ 124          {
+ 125   1          CS = 1;
+ 126   1          CheckBusy();
+ 127   1          SendByte(0xf8);            //11111,RW(0),RS(0),0
+ 128   1          SendByte(0xf0&Cbyte);      //高四位
+ 129   1          SendByte(0xf0&Cbyte<<4);//低四位
+ 130   1          CS = 0;
+ 131   1      }
+ 132          
+ 133          void WriteData(uchar Dbyte )
+ 134          {
+ 135   1          CS = 1;
+ 136   1          CheckBusy();
+ 137   1          SendByte(0xfa);            //11111,RW(0),RS(1),0
+ 138   1          SendByte(0xf0&Dbyte);      //高四位
+ 139   1          SendByte(0xf0&Dbyte<<4);//低四位(先执行<<)
+ 140   1          CS = 0;
+ 141   1      }
+ 142          
+ 143          
+ 144          void LineClear(uchar line)
+ 145          {
+ 146   1      
+ 147   1          uchar i;
+ 148   1          WriteCommand(0x30);      //8BitMCU
+ 149   1          WriteCommand(AC_TABLE[8*line]);      //起始位置
+ 150   1      
+ 151   1          for(i=0; i<16; i++)
+ 152   1          {
+ 153   2              WriteData(0x20);//空格
+ 154   2          }
+ 155   1      }
+ 156          
+ 157          
+ 158          void LcdClear( void )
+ 159          {
+ 160   1          uchar i;
+ 161   1          for(i=0; i<4; i++)
+ 162   1          {
+ 163   2              LineClear(i);
+ 164   2          }
+ 165   1      }
+ 166          
+ 167          void WriteChar(uchar row,uchar col,uchar ch)
+ 168          {
+ 169   1              WriteCommand(0x30);      //8BitMCU
+ 170   1              WriteCommand(AC_TABLE[8*row+col]);      //起始位置
+ 171   1              WriteData(ch);
+ 172   1      }
+ 173          
+ 174          void WriteStr(uchar row,uchar col,uchar *puts)
+ 175          {
+ 176   1          WriteCommand(0x30);      //8BitMCU
+ 177   1          WriteCommand(AC_TABLE[8*row+col]);      //起始位置
+C51 COMPILER V9.52.0.0   LCDKEYPHOTO                                                       04/13/2022 20:08:26 PAGE 4   
+
+ 178   1          while(*puts !='\0')      //判断字符串是否显示完毕
+ 179   1          {
+ 180   2              if(col==8)            //判断换行
+ 181   2              {
+ 182   3                  //若不判断,则自动从第一行到第三行
+ 183   3                  col=0;
+ 184   3                  row++;
+ 185   3              }
+ 186   2              if(row==4) row=0;      //一屏显示完,回到屏左上角
+ 187   2              WriteCommand(AC_TABLE[8*row+col]);
+ 188   2              WriteData(*puts);      //一个汉字要写两次
+ 189   2              puts++;
+ 190   2              if(*puts == '\0')
+ 191   2              {
+ 192   3                  return;
+ 193   3              }
+ 194   2              WriteData(*puts);
+ 195   2              puts++;
+ 196   2              col++;
+ 197   2          }
+ 198   1      }
+ 199          
+ 200          
+ 201          //image init and show
+ 202          void ImageShow( void )
+ 203          {
+ 204   1              uchar i, j, k, columnPosition;
+ 205   1              //init
+ 206   1              
+ 207   1              i = 0;  
+ 208   1              columnPosition = 0x80 + 0x08 * i;
+ 209   1              for(j = 0; j < 32; j++)
+ 210   1              {
+ 211   2              for(k = 0; k < 8; k++)    //上半屏幕清空
+ 212   2                      {
+ 213   3                              //RE = 1
+ 214   3                              WriteCommand(0x34);
+ 215   3                              //set start position
+ 216   3                              WriteCommand(0x80 + j);
+ 217   3                              WriteCommand(columnPosition + k);
+ 218   3                              
+ 219   3                              //RE = 1
+ 220   3                              WriteCommand(0x30);
+ 221   3                              //write two bytes continuously
+ 222   3                              WriteData(0x00);
+ 223   3                              WriteData(0x00);
+ 224   3                      }
+ 225   2              }
+ 226   1              i = 1;
+ 227   1              columnPosition = 0x80 + 0x08 * i;
+ 228   1              for(j = 0; j < 16; j++)
+ 229   1              {
+ 230   2              for(k = 0; k < 8; k++)    //留下人
+ 231   2                      {
+ 232   3                              //RE = 1
+ 233   3                              WriteCommand(0x34);
+ 234   3                              //set start position
+ 235   3                              WriteCommand(0x80 + j);
+ 236   3                              WriteCommand(columnPosition + k);
+ 237   3                              
+ 238   3                              //RE = 1
+ 239   3                              WriteCommand(0x30);
+C51 COMPILER V9.52.0.0   LCDKEYPHOTO                                                       04/13/2022 20:08:26 PAGE 5   
+
+ 240   3                              //write two bytes continuously
+ 241   3                              WriteData(0x00);
+ 242   3                              WriteData(0x00);
+ 243   3                      }
+ 244   2              }
+ 245   1              
+ 246   1              
+ 247   1              for(i = 0; i <1; i++)
+ 248   1              {
+ 249   2                      uchar *imagePtr=flower;
+ 250   2                      columnPosition = 0x80 + 0x08 * i;
+ 251   2                      for(j = yidong*8; j < yidong*8+16; j++)
+ 252   2                      {
+ 253   3                      for(k = lie ;k < lie+1; k++)    //显示花
+ 254   3                              {
+ 255   4                                      //RE = 1
+ 256   4                                      WriteCommand(0x34);
+ 257   4                                      //set start position
+ 258   4                                      WriteCommand(0x80 + j);
+ 259   4                                      WriteCommand(columnPosition + k);
+ 260   4                                      
+ 261   4                                      //RE = 1
+ 262   4                                      WriteCommand(0x30);
+ 263   4                                      //write two bytes continuously
+ 264   4                                      WriteData(*imagePtr++);
+ 265   4                                      WriteData(*imagePtr++);
+ 266   4                              }
+ 267   3                      }
+ 268   2              }
+ 269   1              //yidong=rand()%7;
+ 270   1              yidong++;
+ 271   1              if(yidong>=4) 
+ 272   1              {
+ 273   2                      lie=(lie+3)%8;
+ 274   2                      zongshu++;
+ 275   2                      yidong=0;
+ 276   2              }
+ 277   1      
+ 278   1      
+ 279   1                      
+ 280   1              
+ 281   1              WriteCommand(0x32);
+ 282   1              WriteCommand(0x36);
+ 283   1      }
+ 284          
+ 285          void ImageShow_ren( void )
+ 286          {
+ 287   1              //ImageShow();
+ 288   1              uchar j1, k1, columnPosition1;
+ 289   1              //init
+ 290   1                      uchar *imagePtr1=ren;
+ 291   1              columnPosition1 = 0x80 + 0x08 * 1;
+ 292   1              for(j1 = 16; j1 < 32; j1++)
+ 293   1              {
+ 294   2              for(k1 = 0; k1 < 8; k1++)    //清除上一时刻人
+ 295   2                      {
+ 296   3                              //RE = 1
+ 297   3                              WriteCommand(0x34);
+ 298   3                              //set start position
+ 299   3                              WriteCommand(0x80 + j1);
+ 300   3                              WriteCommand(columnPosition1 + k1);
+ 301   3                              
+C51 COMPILER V9.52.0.0   LCDKEYPHOTO                                                       04/13/2022 20:08:26 PAGE 6   
+
+ 302   3                              //RE = 1
+ 303   3                              WriteCommand(0x30);
+ 304   3                              //write two bytes continuously
+ 305   3                              WriteData(0x00);
+ 306   3                              WriteData(0x00);
+ 307   3                      }
+ 308   2              }
+ 309   1                      for(j1 = 16; j1 < 32; j1++)
+ 310   1                      {
+ 311   2                      for(k1 =ren_posi;k1 <ren_posi+1; k1++)    //显示人
+ 312   2                              {
+ 313   3                                      //RE = 1
+ 314   3                                      WriteCommand(0x34);
+ 315   3                                      //set start position
+ 316   3                                      WriteCommand(0x80 + j1);
+ 317   3                                      WriteCommand(columnPosition1 + k1);
+ 318   3                                      
+ 319   3                                      //RE = 1
+ 320   3                                      WriteCommand(0x30);
+ 321   3                                      //write two bytes continuously
+ 322   3                                      WriteData(*imagePtr1++);
+ 323   3                                      WriteData(*imagePtr1++);
+ 324   3                              }
+ 325   2                      }
+ 326   1              
+ 327   1                                              if((ren_posi==lie)&&(yidong))
+ 328   1                              {
+ 329   2                                      defen++;
+ 330   2                              }
+ 331   1              WriteCommand(0x32);
+ 332   1              WriteCommand(0x36);
+ 333   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    924    ----
+   CONSTANT SIZE    =   2080    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     10      15
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  2 WARNING(S),  0 ERROR(S)

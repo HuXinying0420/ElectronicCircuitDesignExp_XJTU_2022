@@ -1,0 +1,124 @@
+C51 COMPILER V9.52.0.0   LED                                                               04/13/2022 20:08:26 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE LED
+OBJECT MODULE PLACED IN led.OBJ
+COMPILER INVOKED BY: d:\Keil\C51\BIN\C51.EXE led.c BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          #include "led.h"
+   2          
+   3          /*select以及display函数，其中第一个是选择数码管，从上到下从左到右1-12，第二个是显示数字*/
+   4          
+   5          void display(int a)  // 显示数字
+   6          {
+   7   1              switch(a)
+   8   1              {
+   9   2                      case 0:P7=0xC0;break;
+  10   2                      case 1:P7=0xF9;break;
+  11   2                      case 2:P7=0xA4;break;
+  12   2                      case 3:P7=0xB0;break;
+  13   2                      case 4:P7=0x99;break;
+  14   2                      case 5:P7=0x92;break;
+  15   2                      case 6:P7=0x82;break;
+  16   2                      case 7:P7=0xF8;break;
+  17   2                      case 8:P7=0x80;break;
+  18   2                      case 9:P7=0x90;break;
+  19   2                      case 10:P7=0x88;break;//A
+  20   2                      case 11:P7=0x83;break;
+  21   2                      case 12:P7=0xC6;break;
+  22   2                      case 13:P7=0xA1;break;
+  23   2                      case 14:P7=0x86;break;
+  24   2                      case 15:P7=0x8e;break;
+  25   2                      default:P7=0xc0;break;
+  26   2              }
+  27   1      }
+  28          
+  29          void select(int b)  // 选择数码管
+  30          {
+  31   1              switch(b)
+  32   1              {                       
+  33   2                      case 1: P5 = 0XFE;P6 = 0XFF;break;
+  34   2                      case 2: P5 = 0XFD;P6 = 0XFF;break;
+  35   2                      case 3: P5 = 0XFB;P6 = 0XFF;break;
+  36   2                      case 4: P5 = 0XF7;P6 = 0XFF;break;
+  37   2                      case 5: P5 = 0XEF;P6 = 0XFF;break;
+  38   2                      case 6: P5 = 0XDF;P6 = 0XFF;break;
+  39   2                      case 7: P5 = 0XBF;P6 = 0XFF;break;
+  40   2                      case 8: P5 = 0X7F;P6 = 0XFF;break;
+  41   2                      
+  42   2                      case 9: P6 = 0XFE;P5 = 0XFF;break;
+  43   2                      case 10:P6 = 0XFD;P5 = 0XFF;break;
+  44   2                      case 11:P6 = 0XFB;P5 = 0XFF;break;
+  45   2                      case 12:P6 = 0XF7;P5 = 0XFF;break;
+  46   2              }
+  47   1      }
+  48          
+  49          void Led_Port_Init()
+  50          {
+  51   1          //set to push_pull model
+  52   1          P74OUT &= 0xff;
+  53   1      
+  54   1          //enable crossbar
+  55   1          XBR2 |= 0x40;
+C51 COMPILER V9.52.0.0   LED                                                               04/13/2022 20:08:26 PAGE 2   
+
+  56   1      }
+  57          
+  58          void LedInit()
+  59          {
+  60   1              Led_Port_Init();
+  61   1              P5 |= 0xff;
+  62   1              P6 |= 0x0f;
+  63   1              P7 = 0xff;
+  64   1      }
+  65          
+  66          void LedDispNum()  //数码管显示数字
+  67          {
+  68   1              unsigned char temp[4],defen1[4],zongshu1[4];
+  69   1              temp[0] = Time_num%10;
+  70   1              temp[1] = Time_num%100/10;
+  71   1              temp[2] = Time_num%1000/100;  // 秒的个位
+  72   1              temp[3] = Time_num/1000;
+  73   1              //unsigned char temp1[4];
+  74   1              defen1[0] = defen%10;
+  75   1              defen1[1] = defen%100/10;
+  76   1              defen1[2] = defen%1000/100;  // 秒的个位
+  77   1              defen1[3] = defen/1000;
+  78   1              zongshu1[0] = zongshu%10;
+  79   1              zongshu1[1] = zongshu%100/10;
+  80   1              zongshu1[2] = zongshu%1000/100;  // 秒的个位
+  81   1              zongshu1[3] = zongshu/1000;
+  82   1              // 最上边一行显示
+  83   1              select(4);display(temp[0]); Delay(500); P7 = 0xff;
+  84   1              select(3);display(temp[1]); Delay(500); P7 = 0xff;
+  85   1              select(2);display(temp[2]); P7 = P7 & ~0x80; Delay(500); P7 = 0xff;            //加小数点
+  86   1              select(1);display(temp[3]); if(temp[3] == 0) P7 = 0xff; Delay(500); P7 = 0xff; //除零
+  87   1      
+  88   1              // 中间一行
+  89   1              select(8);display(defen1[0]); Delay(500); P7 = 0xff;
+  90   1              select(7);display(defen1[1]);Delay(500); P7 = 0xff;
+  91   1              select(6);display(defen1[2]); Delay(500); P7 = 0xff;
+  92   1              select(5);display(defen1[3]); Delay(500); P7 = 0xff; // Delay(500);
+  93   1      
+  94   1              // 下边一行
+  95   1              select(12);display(zongshu1[0]); Delay(500); P7 = 0xff;
+  96   1              select(11);display(zongshu1[1]);Delay(500); P7 = 0xff;
+  97   1              select(10);display(zongshu1[2]); Delay(500); P7 = 0xff;
+  98   1              select(9) ;display(zongshu1[3]); Delay(500); P7 = 0xff; // Delay(500);
+  99   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    769    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----      12
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

@@ -1,0 +1,6 @@
+"STARTUP.obj",
+"lcdkeyphoto.obj",
+"main_keydigi.obj",
+"led.obj" 
+TO "renwu1" 
+RAMSIZE(256) 

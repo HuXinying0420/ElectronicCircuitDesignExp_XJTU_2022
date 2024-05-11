@@ -1,0 +1,291 @@
+C51 COMPILER V9.52.0.0   LCD1                                                              04/05/2022 20:11:05 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE LCD1
+OBJECT MODULE PLACED IN lcd1.OBJ
+COMPILER INVOKED BY: d:\Keil\C51\BIN\C51.EXE lcd1.c BROWSE DEBUG OBJECTEXTEND TABS(2)
+
+line level    source
+
+   1          #include"c8051f020.h"
+   2          #include <intrins.h>
+   3          #include <stdio.h>
+   4          
+   5          #define uchar unsigned char          
+   6          #define uint  unsigned int 
+   7          
+   8          #define SYSCLK    11059200
+   9          
+  10          
+  11          //-----------------------------------------------------------------------------
+  12          // 液晶接口定义
+  13          //-----------------------------------------------------------------------------
+  14          sbit SCLK=P1^3;
+  15          sbit SID=P1^4;
+  16          sbit CS=P1^5; 
+  17          
+  18          //-----------------------------------------------------------------------------
+  19          // 函数定义
+  20          //-----------------------------------------------------------------------------
+  21          void SYSCLK_Init (void);
+  22          void PORT_Init (void);
+  23          void LCMInit(void);
+  24          void Delay_ms(uchar t);
+  25          void Delay(uint k);
+  26          
+  27          void WriteData(unsigned char WDLCM);
+  28          void WriteCommand (uchar Cbyte);
+  29          void LcmClear( void );
+  30          void Clear(int l);
+  31          //unsigned char ReadData(void);
+  32          void CheckBusy(void);
+  33          void SendByte(uchar Dbyte);
+  34          uchar ReceiveByte(void);
+  35          void PutChar(uchar row,uchar col,uchar ch);
+  36          void PutStr(uchar row,uchar col,uchar *puts);
+  37          
+  38          uchar code AC_TABLE[]={
+  39          0x80,0x81,0x82,0x83,0x84,0x85,0x86,0x87,      //第一行汉字位置
+  40          0x90,0x91,0x92,0x93,0x94,0x95,0x96,0x97,      //第二行汉字位置
+  41          0x88,0x89,0x8a,0x8b,0x8c,0x8d,0x8e,0x8f,      //第三行汉字位置
+  42          0x98,0x99,0x9a,0x9b,0x9c,0x9d,0x9e,0x9f,      //第四行汉字位置
+  43          };
+  44          
+  45          //--------------------------------------------------
+  46          uchar code str0[]="班级：自动化91";
+  47          uchar code str1[]="姓名：弓知鑫";
+  48          uchar code str2[]="学号：2191421852";
+  49          
+  50          
+  51          //-----------------------------------------------
+  52          //系统时钟初始化
+  53          //---------------------------------------------
+  54          void SYSCLK_Init (void)
+  55          {
+C51 COMPILER V9.52.0.0   LCD1                                                              04/05/2022 20:11:05 PAGE 2   
+
+  56   1         int i;                      // 延时计数器
+  57   1         OSCXCN = 0x67;              // 使用外部晶振
+  58   1         for (i=0; i<256; i++);      // 等待1ms
+  59   1         while (!(OSCXCN & 0x80));   // 等待外部晶振稳定
+  60   1         OSCICN = 0x88;              // 切换到外部晶振
+  61   1      }
+  62          
+  63          //---------------------------------------------
+  64          //端口初始化
+  65          //---------------------------------------------
+  66          void PORT_Init (void)
+  67          {
+  68   1          XBR0     = 0X04;         //设置XBR0
+  69   1          XBR1     = 0X1E;         //设置XBR1
+  70   1          XBR2     = 0X44;         //打开交叉开关
+  71   1      
+  72   1        P0MDOUT|= 0x03;
+  73   1        P1MDOUT=0xFF;      //端口1设置为推挽输出
+  74   1        P2MDOUT=0xFF;      //端口2设置为推挽输出
+  75   1        P3MDOUT=0xFF;      //端口3设置为推挽输出
+  76   1      
+  77   1      }
+  78          
+  79          //---------------------------------------------
+  80          //延时ms
+  81          //---------------------------------------------
+  82          void Delay_ms(unsigned int times)
+  83          {
+*** WARNING C235 IN LINE 83 OF lcd1.c: parameter 1: different types
+  84   1          unsigned int i,j;
+  85   1      
+  86   1          for (i=0; i<times; i++) 
+  87   1          for (j=0; j<1300; j++);                       
+  88   1       
+  89   1      }
+  90          
+  91          //-----------------------------------------------------------------------------
+  92          // 延时
+  93          //-----------------------------------------------------------------------------
+  94          void Delay(unsigned int k)
+  95          { 
+  96   1       do 
+  97   1        {   
+  98   2          
+  99   2          }while( --k ); 
+ 100   1      }
+ 101          
+ 102          //-----------------------------------------------
+ 103          //液晶初始化
+ 104          //-----------------------------------------------
+ 105          void LcmInit( void )
+ 106          {
+ 107   1      
+ 108   1           WriteCommand(0x30);      //8BitMCU
+ 109   1           WriteCommand(0x03);      //AC?0,不改变DDRAM值
+ 110   1           WriteCommand(0x0C);      //显示ON,游标OFF,游标位反白OFF
+ 111   1           WriteCommand(0x01);      //清屏,AC归0
+ 112   1           WriteCommand(0x06);      //写入时,游标右移动
+ 113   1      }
+ 114          
+ 115          //-------------------------------------------------
+ 116          void WriteCommand(unsigned char Cbyte )
+C51 COMPILER V9.52.0.0   LCD1                                                              04/05/2022 20:11:05 PAGE 3   
+
+ 117          {
+ 118   1           CS = 1;
+ 119   1           CheckBusy();
+ 120   1           SendByte(0xf8);            //11111,RW(0),RS(0),0
+ 121   1           SendByte(0xf0&Cbyte);      //高四位
+ 122   1           SendByte(0xf0&Cbyte<<4);//低四位
+ 123   1           CS = 0;
+ 124   1      }
+ 125          
+ 126          //-------------------------------------------------
+ 127          void SendByte(uchar Dbyte)
+ 128          {
+ 129   1           uchar i;
+ 130   1           for(i=0;i<8;i++)
+ 131   1           {
+ 132   2                 SCLK = 0;
+ 133   2                 Dbyte=Dbyte<<1;      //左移一位
+ 134   2                 SID = CY;            //移出的位给SID
+ 135   2                 SCLK = 1;
+ 136   2                 SCLK = 0;
+ 137   2           }
+ 138   1      }
+ 139          
+ 140          //-------------------------------------------------
+ 141          void CheckBusy( void )
+ 142          {
+ 143   1           do   SendByte(0xfc);      //11111,RW(1),RS(0),0
+ 144   1           while(0x80&ReceiveByte());      //BF(.7)=1 Busy
+ 145   1      }
+ 146          
+ 147          //-------------------------------------------------
+ 148          uchar ReceiveByte(void)
+ 149          {
+ 150   1           uchar i,temp1,temp2;
+ 151   1           temp1 = 0;
+ 152   1           temp2 = 0;
+ 153   1           for(i=0;i<8;i++)
+ 154   1           {
+ 155   2                 temp1=temp1<<1;
+ 156   2                 SCLK = 0;
+ 157   2                 SCLK = 1;            
+ 158   2                 SCLK = 0;
+ 159   2                 if(SID) temp1++;
+ 160   2           }
+ 161   1           for(i=0;i<8;i++)
+ 162   1           {
+ 163   2                 temp2=temp2<<1;
+ 164   2                 SCLK = 0;
+ 165   2                 SCLK = 1;
+ 166   2                 SCLK = 0;
+ 167   2                 if(SID) temp2++;
+ 168   2           }
+ 169   1           return ((0xf0&temp1)+(0x0f&temp2));
+ 170   1      }
+ 171          
+ 172          //--------------------------------------------------------------
+ 173          void PutStr(uchar row,uchar col,uchar *puts)
+ 174          {
+ 175   1           WriteCommand(0x30);      //8BitMCU
+ 176   1           WriteCommand(AC_TABLE[8*row+col]);      //起始位置
+ 177   1           while(*puts !='\0')      //判断字符串是否显示完毕
+ 178   1           {
+C51 COMPILER V9.52.0.0   LCD1                                                              04/05/2022 20:11:05 PAGE 4   
+
+ 179   2                 if(col==8)            //判断换行
+ 180   2                 {            //若不判断,则自动从第一行到第三行
+ 181   3                       col=0;
+ 182   3                       row++;
+ 183   3                 }
+ 184   2                 if(row==4) row=0;      //一屏显示完,回到屏左上角
+ 185   2                 WriteCommand(AC_TABLE[8*row+col]);
+ 186   2                 WriteData(*puts);      //一个汉字要写两次
+ 187   2                 puts++;
+ 188   2                 WriteData(*puts);
+ 189   2                 puts++;
+ 190   2                 col++;
+ 191   2           }
+ 192   1      }
+ 193          
+ 194          //-------------------------------------------------------------
+ 195          /*void PutChar(uchar row,uchar col,uchar ch)
+ 196          {
+ 197                WriteCommand(0x30);      //8BitMCU
+ 198                WriteCommand(AC_TABLE[8*row+col]);      //起始位置
+ 199                  WriteData(ch);
+ 200          }*/
+ 201          
+ 202          //-------------------------------------------------------------
+ 203          void WriteData(uchar Dbyte )
+ 204          {
+ 205   1           CS = 1;
+ 206   1           CheckBusy();
+ 207   1           SendByte(0xfa);            //11111,RW(0),RS(1),0
+ 208   1           SendByte(0xf0&Dbyte);      //高四位
+ 209   1           SendByte(0xf0&Dbyte<<4);//低四位(先执行<<)
+ 210   1           CS = 0;
+ 211   1      }
+ 212          
+ 213          //-----------------------------------------------------------
+ 214          void LcmClear( void )
+ 215          {
+ 216   1           uchar i;
+ 217   1           WriteCommand(0x30);      //8BitMCU
+ 218   1           WriteCommand(0x80);      //AC归起始位
+ 219   1         for(i=0;i<4;i++){
+ 220   2          Clear(i);
+ 221   2         }
+ 222   1      }
+ 223          
+ 224          //--------------------------------------------------
+ 225          void Clear(int l)
+ 226          {
+ 227   1      
+ 228   1           uchar i;
+ 229   1           WriteCommand(0x30);      //8BitMCU
+ 230   1           WriteCommand(AC_TABLE[8*l]);      //起始位置
+ 231   1      
+ 232   1           for(i=0;i<16;i++){
+ 233   2           WriteData(0x20);//空格
+ 234   2        } 
+ 235   1      }
+ 236          
+ 237          //-----------------------------------------------------------------------------
+ 238          // 主程序
+ 239          //-----------------------------------------------------------------------------
+ 240          
+C51 COMPILER V9.52.0.0   LCD1                                                              04/05/2022 20:11:05 PAGE 5   
+
+ 241          //void main()
+ 242          //{ 
+ 243          
+ 244          //  WDTCN = 0xde;
+ 245          //  WDTCN = 0xad;                //关闭看门狗 
+ 246          //  
+ 247          //  WDTCN = 0xA5;
+ 248          
+ 249          //  SYSCLK_Init();  
+ 250          //  PORT_Init();    
+ 251          //  LCMInit(); 
+ 252          //  LcmClear();
+ 253          //  PutStr(0, 0, str0);
+ 254          //  PutStr(1, 0, str1);
+ 255          //  PutStr(2, 0, str2);
+ 256          
+ 257          //  while(1);
+ 258          
+ 259          //}  
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    465    ----
+   CONSTANT SIZE    =     77    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----      11
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  1 WARNING(S),  0 ERROR(S)
