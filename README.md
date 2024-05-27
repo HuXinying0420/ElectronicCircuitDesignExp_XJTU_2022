@@ -1,6 +1,6 @@
 # ElectronicCircuitDesignExp_XJTU_2022
 
-his repository contains the contents and reports of my experiments from the "Electronic Circuit Design Experiment" course at Xi'an Jiaotong University (XJTU) in 2022. This course is a core practical course for students majoring in Electrical Engineering and Automation, which aims to cultivate students' abilities in electronic circuit design, embedded system development, and practical problem-solving.
+This repository contains the contents and reports of my experiments from the "Electronic Circuit Design Special Experiment 2" course at Xi'an Jiaotong University (XJTU) in 2022. This course is a core practical course for students majoring in Automation, which aims to cultivate students' abilities in electronic circuit design, embedded system development, and practical problem-solving.
 
 The experiments cover a wide range of topics, including microcontroller programming, digital logic design, analog circuit design, control system implementation, and even simple game development. Through these hands-on experiments, students can apply the theoretical knowledge learned in the classroom to practical engineering problems, improving their comprehensive abilities in electronic circuit design and embedded system development.
 
